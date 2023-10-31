@@ -5,7 +5,9 @@ unsigned char left_matrix[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x44,0x28,0x10,0x44
 unsigned char right_matrix[] = {0x00,0x10,0x28,0x44,0x10,0x28,0x44,0x10,0x28,0x44,0x00,0x00,0x00,0x00, 0x00,0x00};
 unsigned char STOP01[] = {0x2E,0x2A,0x3A,0x00,0x02,0x3E,0x02,0x00,0x3E,0x22,0x3E,0x00,0x3E,0x0A, 0x0E,0x00};
 unsigned char clear[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00};
+unsigned char alarm_matrix[] = {0x00, 0x00, 0x7a, 0x7a, 0x00, 0x00, 0x00, 0x7a, 0x7a, 0x00, 0x00, 0x00, 0x7a, 0x7a, 0x00, 0x00};
 
+#define ALARM_Pin A3
 #define SCL_Pin A5
 #define SDA_Pin A4
 #include "SR04.h"
@@ -37,6 +39,10 @@ bool doHelloDance = true;
 int ledCounter = 0;
 bool showLed = true;
 
+bool isAlarmEnabled = false;
+int targetAlarmDistance = 0;
+double alarmDistanceThreshold = 0.05; // Change of 5% of targetAlarmDistance will trigger alarm, if enabled
+
 void setup() {
   Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
@@ -48,15 +54,23 @@ void setup() {
   pinMode(sensor_c,INPUT);
   pinMode(sensor_r,INPUT);
   pinMode(SCL_Pin,OUTPUT);
+  pinMode(ALARM_Pin,OUTPUT);
   pinMode(SDA_Pin,OUTPUT);
   //Clear the screen
   matrix_display(clear);
   matrix_display(start01);
   pinMode(ledPin, OUTPUT);
+
+  digitalWrite(ALARM_Pin, LOW);
 }
 
 
 void loop() {
+  if (isAlarmEnabled) {
+    triggerAlarmIfNeeded();
+    return;
+  }
+
   showHelloDance();
   blinkLed();
 
@@ -115,8 +129,32 @@ void processIR() {
         Stop();  
         matrix_display(STOP01); 
         break;
+      case 0xFF52AD:
+        setupAlarm();
+        break;
     }
     irrecv.resume(); // Receive the next value
+  }
+}
+
+void setupAlarm() {
+  isAlarmEnabled = true;
+  matrix_display(alarm_matrix);
+  delay(1000);
+  targetAlarmDistance = sr04.DistanceAvg();
+  matrix_display(clear);
+  digitalWrite(ledPin, LOW);
+}
+
+void triggerAlarmIfNeeded() {
+  int currentDistance = sr04.Distance();
+  double distanceChangePercentage = abs(targetAlarmDistance - currentDistance) / currentDistance;
+  if (distanceChangePercentage > alarmDistanceThreshold) {
+    digitalWrite(ALARM_Pin, HIGH);
+    digitalWrite(ledPin, HIGH);
+    delay(1000);
+    digitalWrite(ALARM_Pin, LOW);
+    digitalWrite(ledPin, LOW);
   }
 }
 
